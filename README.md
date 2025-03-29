@@ -18,8 +18,13 @@ manifest:
     - name: sekigon-gonnoc
       url-base: https://github.com/sekigon-gonnoc
   projects:
+    - name: zmk
+      remote: zmkfirmware
+      revision: main
+      import: app/west.yml
     - name: zmk-driver-paw3222
       remote: sekigon-gonnoc
+      revision: main
 ```
 
 ## Device Tree Configuration
@@ -115,8 +120,13 @@ manifest:
     - name: sekigon-gonnoc
       url-base: https://github.com/sekigon-gonnoc
   projects:
+    - name: zmk
+      remote: zmkfirmware
+      revision: main
+      import: app/west.yml
     - name: zmk-driver-paw3222
       remote: sekigon-gonnoc
+      revision: main
 ```
 
 ## デバイスツリー設定
