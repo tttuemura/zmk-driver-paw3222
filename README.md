@@ -76,13 +76,7 @@ Add the following to your keyboard's `Kconfig.defconfig`:
 ```kconfig
 if ZMK_KEYBOARD_YOUR_KEYBOARD
 
-config SPI
-    default y
-
-config INPUT
-    default y
-
-config ZMK_MOUSE
+config ZMK_POINTING
     default y
 
 config PAW3222
@@ -178,13 +172,7 @@ manifest:
 ```kconfig
 if ZMK_KEYBOARD_YOUR_KEYBOARD
 
-config SPI
-    default y
-
-config INPUT
-    default y
-
-config ZMK_MOUSE
+config ZMK_POINTING
     default y
 
 config PAW3222
