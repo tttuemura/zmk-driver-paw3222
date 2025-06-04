@@ -231,10 +231,9 @@ static void paw32xx_motion_work_handler(struct k_work *work)
 		// No motion detected, re-enable interrupts and wait for next interrupt
 		gpio_pin_interrupt_configure_dt(&cfg->irq_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 
-		if (gpio_pin_get_dt(&cfg->irq_gpio) == 1) {
-			k_timer_start(&data->motion_timer, K_MSEC(15), K_NO_WAIT);
+		if (gpio_pin_get_dt(&cfg->irq_gpio) == 0) {
+			return;
 		}
-		return;
 	}
 
 	ret = paw32xx_read_xy(dev, &x, &y);
@@ -247,7 +246,7 @@ static void paw32xx_motion_work_handler(struct k_work *work)
 	input_report_rel(data->dev, INPUT_REL_X, x, false, K_FOREVER);
 	input_report_rel(data->dev, INPUT_REL_Y, y, true, K_FOREVER);
 
-	// Schedule next check after 8ms without using interrupts
+	// Schedule next check after 15ms without using interrupts
 	k_timer_start(&data->motion_timer, K_MSEC(15), K_NO_WAIT);
 }
 
