@@ -15,6 +15,12 @@ properties:
     description:
       GPIO connected to the motion pin, active low.
 
+  power-gpios:
+    type: phandle-array
+    required: false
+    description:
+      GPIO connected to the power control pin.
+
   res-cpi:
     type: int
     description: |
