@@ -443,9 +443,9 @@ static int paw32xx_pm_action(const struct device *dev, enum pm_device_action act
 
 #if DT_INST_NODE_HAS_PROP(0, power_gpios)
         if (gpio_is_ready_dt(&cfg->power_gpio)) {
-            ret = gpio_pin_set_dt(&cfg->power_gpio, 0);
+            ret = gpio_pin_configure_dt(&cfg->power_gpio, GPIO_DISCONNECTED);
             if (ret < 0) {
-                LOG_ERR("Failed to disable power: %d", ret);
+                LOG_ERR("Failed to disconnect power: %d", ret);
                 return ret;
             }
         }
@@ -455,7 +455,7 @@ static int paw32xx_pm_action(const struct device *dev, enum pm_device_action act
     case PM_DEVICE_ACTION_RESUME:
 #if DT_INST_NODE_HAS_PROP(0, power_gpios)
         if (gpio_is_ready_dt(&cfg->power_gpio)) {
-            ret = gpio_pin_set_dt(&cfg->power_gpio, 1);
+            ret = gpio_pin_configure_dt(&cfg->power_gpio, GPIO_OUTPUT_ACTIVE);
             if (ret < 0) {
                 LOG_ERR("Failed to enable power: %d", ret);
                 return ret;
