@@ -435,6 +435,20 @@ static int paw32xx_pm_action(const struct device *dev, enum pm_device_action act
 
     switch (action) {
     case PM_DEVICE_ACTION_SUSPEND:
+        // Disable IRQ interrupt
+        ret = gpio_pin_interrupt_configure_dt(&cfg->irq_gpio, GPIO_INT_DISABLE);
+        if (ret < 0) {
+            LOG_ERR("Failed to disable IRQ interrupt: %d", ret);
+            return ret;
+        }
+
+        // Disconnect IRQ GPIO
+        ret = gpio_pin_configure_dt(&cfg->irq_gpio, GPIO_DISCONNECTED);
+        if (ret < 0) {
+            LOG_ERR("Failed to disconnect IRQ GPIO: %d", ret);
+            return ret;
+        }
+
         val = CONFIGURATION_PD_ENH;
         ret = paw32xx_update_reg(dev, PAW32XX_CONFIGURATION, CONFIGURATION_PD_ENH, val);
         if (ret < 0) {
@@ -468,6 +482,20 @@ static int paw32xx_pm_action(const struct device *dev, enum pm_device_action act
         val = 0;
         ret = paw32xx_update_reg(dev, PAW32XX_CONFIGURATION, CONFIGURATION_PD_ENH, val);
         if (ret < 0) {
+            return ret;
+        }
+
+        // Reconfigure IRQ GPIO as input
+        ret = gpio_pin_configure_dt(&cfg->irq_gpio, GPIO_INPUT);
+        if (ret < 0) {
+            LOG_ERR("Failed to configure IRQ GPIO: %d", ret);
+            return ret;
+        }
+
+        // Re-enable IRQ interrupt
+        ret = gpio_pin_interrupt_configure_dt(&cfg->irq_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+        if (ret < 0) {
+            LOG_ERR("Failed to enable IRQ interrupt: %d", ret);
             return ret;
         }
         break;
