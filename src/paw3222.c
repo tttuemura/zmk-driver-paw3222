@@ -319,15 +319,31 @@ static int paw32xx_configure(const struct device *dev) {
     const struct paw32xx_config *cfg = dev->config;
     uint8_t val;
     int ret;
+    int retry_count = 10;
 
-    ret = paw32xx_read_reg(dev, PAW32XX_PRODUCT_ID1, &val);
-    if (ret < 0) {
-        return ret;
-    }
+    // Check if the device is ready
+    while (retry_count--) {
+        ret = paw32xx_read_reg(dev, PAW32XX_PRODUCT_ID1, &val);
+        if (ret < 0) {
+            if (retry_count == 0) {
+                return ret;
+            }
+            k_sleep(K_MSEC(100)); // Wait before retrying
+            continue;
+        }
 
-    if (val != PRODUCT_ID_PAW32XX) {
-        LOG_ERR("Invalid product id: %02x", val);
-        return -ENOTSUP;
+        if (val != PRODUCT_ID_PAW32XX) {
+            LOG_ERR("Invalid product id: %02x", val);
+
+            if (retry_count == 0) {
+                return -ENODEV; // Device not ready after retries
+            }
+            k_sleep(K_MSEC(100)); // Wait before retrying
+            continue;
+        }
+        else {
+            break; // Device is ready
+        }
     }
 
     ret = paw32xx_update_reg(dev, PAW32XX_CONFIGURATION, CONFIGURATION_RESET, CONFIGURATION_RESET);
@@ -372,8 +388,8 @@ static int paw32xx_init(const struct device *dev) {
             return ret;
         }
 
-        // Wait 0.5 seconds before turning on power
-        k_sleep(K_MSEC(500));
+        // Wait 0.01 seconds before turning on power
+        k_sleep(K_MSEC(10));
 
         // Now turn on power
         ret = gpio_pin_set_dt(&cfg->power_gpio, 1);
@@ -383,7 +399,7 @@ static int paw32xx_init(const struct device *dev) {
         }
 
         // Wait for power stabilization
-        k_sleep(K_MSEC(10));
+        k_sleep(K_MSEC(500));
     }
 #endif
 
