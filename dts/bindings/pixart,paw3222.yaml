@@ -33,3 +33,9 @@ properties:
       Initialize the sensor in "force awake" mode. This can also be enabled or
       disabled in runtime by the application using the paw32xx_force_awake()
       API.
+      
+  automouse-layer:
+    type: int
+    required: false
+    description: >
+      Layer index to activate automatically when pointer movement is detected.
