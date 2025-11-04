@@ -81,7 +81,7 @@ struct paw32xx_config {
 
 /* Note: struct paw32xx_data is defined in include/paw3222.h when
  * CONFIG_PAW3222_SCROLL_ACCEL is enabled. If not enabled, a minimal
- * opaque data pointer is still used via device->data.
+ * opaque data pointer is used via device->data.
  */
 
 static inline int32_t sign_extend(uint32_t value, uint8_t index) {
@@ -472,6 +472,66 @@ static int paw32xx_pm_action(const struct device *dev, enum pm_device_action act
     return 0;
 }
 #endif /* CONFIG_PM_DEVICE */
+
+/* Minimal device init to satisfy DEVICE_DT_INST_DEFINE and hook up handlers.
+ * Placed after paw32xx_configure.
+ */
+static int paw32xx_init(const struct device *dev)
+{
+    const struct paw32xx_config *cfg = dev->config;
+    struct paw32xx_data *data = dev->data;
+    int ret;
+
+    /* store device pointer */
+    data->dev = dev;
+
+    /* init work and timer */
+    k_work_init(&data->motion_work, paw32xx_motion_work_handler);
+    k_timer_init(&data->motion_timer, paw32xx_motion_timer_handler, NULL);
+
+    /* prepare gpio callback structure (callback not yet registered) */
+    gpio_init_callback(&data->motion_cb, paw32xx_motion_handler,
+                       BIT(cfg->irq_gpio.pin));
+
+#ifdef CONFIG_PAW3222_SCROLL_ACCEL
+    /* initialize accel state */
+    data->last_scroll_time = 0;
+    data->scroll_delta_x = 0;
+    data->scroll_delta_y = 0;
+    data->last_remainder_time = 0;
+#endif
+
+    /* Configure IRQ GPIO if available */
+    if (gpio_is_ready_dt(&cfg->irq_gpio)) {
+        ret = gpio_pin_configure_dt(&cfg->irq_gpio, GPIO_INPUT);
+        if (ret < 0) {
+            LOG_ERR("Failed to configure IRQ gpio: %d", ret);
+            return ret;
+        }
+
+        ret = gpio_add_callback(cfg->irq_gpio.port, &data->motion_cb);
+        if (ret < 0) {
+            LOG_ERR("Failed to add irq callback: %d", ret);
+            return ret;
+        }
+
+        ret = gpio_pin_interrupt_configure_dt(&cfg->irq_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+        if (ret < 0) {
+            LOG_ERR("Failed to configure IRQ interrupt: %d", ret);
+            return ret;
+        }
+    }
+
+    /* Run device configure sequence (SPI reads/writes etc) */
+    ret = paw32xx_configure(dev);
+    if (ret < 0) {
+        LOG_ERR("paw32xx configure failed: %d", ret);
+        return ret;
+    }
+
+    LOG_DBG("paw32xx initialized");
+    return 0;
+}
 
 #define PAW32XX_SPI_MODE                                                                           \
     (SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_MODE_CPOL | SPI_MODE_CPHA | SPI_TRANSFER_MSB)
