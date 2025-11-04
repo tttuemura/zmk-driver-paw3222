@@ -26,6 +26,9 @@
 
 LOG_MODULE_REGISTER(paw32xx, CONFIG_ZMK_LOG_LEVEL);
 
+/* forward declaration so DEVICE_DT_INST_DEFINE can reference it */
+static int paw32xx_init(const struct device *dev);
+
 #define DT_DRV_COMPAT pixart_paw3222
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
@@ -76,19 +79,10 @@ struct paw32xx_config {
     bool force_awake;
 };
 
-struct paw32xx_data {
-    const struct device *dev;
-    struct k_work motion_work;
-    struct gpio_callback motion_cb;
-    struct k_timer motion_timer; /* timer for delayed motion checking */
-
-#ifdef CONFIG_PAW3222_SCROLL_ACCEL
-    int64_t last_scroll_time;
-    int32_t scroll_delta_x;
-    int32_t scroll_delta_y;
-    int64_t last_remainder_time;
-#endif
-};
+/* Note: struct paw32xx_data is defined in include/paw3222.h when
+ * CONFIG_PAW3222_SCROLL_ACCEL is enabled. If not enabled, a minimal
+ * opaque data pointer is still used via device->data.
+ */
 
 static inline int32_t sign_extend(uint32_t value, uint8_t index) {
     __ASSERT_NO_MSG(index <= 31);
