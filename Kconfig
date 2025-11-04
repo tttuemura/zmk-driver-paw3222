@@ -4,3 +4,21 @@ menuconfig PAW3222
   select SPI
     help
       Enable PAW3222 mouse optical sensor.
+
+if PAW3222
+
+config PAW3222_SCROLL_ACCELERATION
+    bool "Enable scroll acceleration"
+    default n
+    help
+      Enable acceleration for scrolling based on movement speed.
+
+config PAW3222_SCROLL_ACCELERATION_SENSITIVITY
+    int "Scroll acceleration sensitivity (1-10)"
+    default 3
+    range 1 10
+    depends on PAW3222_SCROLL_ACCELERATION
+    help
+      Scrolling acceleration sensitivity. Higher values make scrolling more responsive with stronger acceleration.
+
+endif #PAW3222
