@@ -11,7 +11,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+
 #include <zephyr/device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
 
 /**
  * @brief Set resolution on a paw32xx device
@@ -31,8 +34,19 @@ int paw32xx_force_awake(const struct device *dev, bool enable);
 
 #ifdef CONFIG_PAW3222_SCROLL_ACCEL
 
-/* Forward-declare runtime data structure used by driver */
-struct paw32xx_data;
+/* Runtime data structure for PAW32xx driver (visible to accel module) */
+struct paw32xx_data {
+    const struct device *dev;
+    struct k_work motion_work;
+    struct gpio_callback motion_cb;
+    struct k_timer motion_timer;
+
+    /* scroll accel state */
+    int64_t last_scroll_time;
+    int32_t scroll_delta_x;
+    int32_t scroll_delta_y;
+    int64_t last_remainder_time;
+};
 
 /**
  * Apply scroll acceleration to raw x/y deltas
