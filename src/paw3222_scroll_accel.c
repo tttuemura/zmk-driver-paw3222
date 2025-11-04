@@ -11,6 +11,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/input/input.h>
 #include <math.h>
+#include <stdlib.h> /* for abs() */
 #include "../include/paw3222.h"
 
 #ifdef CONFIG_PAW3222_SCROLL_ACCEL
