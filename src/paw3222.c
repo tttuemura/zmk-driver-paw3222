@@ -80,6 +80,8 @@ struct paw32xx_data {
     struct k_work motion_work;
     struct gpio_callback motion_cb;
     struct k_timer motion_timer; // Add timer for delayed motion checking
+    struct k_mutex lock;         // Protect SPI access and state
+    uint16_t current_cpi;        // Current CPI in user units (e.g., 800)
 };
 
 static inline int32_t sign_extend(uint32_t value, uint8_t index) {
@@ -89,6 +91,11 @@ static inline int32_t sign_extend(uint32_t value, uint8_t index) {
 
     return (int32_t)(value << shift) >> shift;
 }
+
+/* Forward declarations for public API */
+int paw32xx_set_resolution(const struct device *dev, uint16_t res_cpi);
+uint16_t paw32xx_get_resolution(const struct device *dev);
+int paw32xx_force_awake(const struct device *dev, bool enable);
 
 static int paw32xx_read_reg(const struct device *dev, uint8_t addr, uint8_t *value) {
     const struct paw32xx_config *cfg = dev->config;
@@ -259,9 +266,15 @@ static void paw32xx_motion_handler(const struct device *gpio_dev, struct gpio_ca
     k_work_submit(&data->motion_work);
 }
 
+/*
+ * Public API: set resolution (CPI)
+ * This function is thread-safe (uses k_mutex) and updates data->current_cpi.
+ */
 int paw32xx_set_resolution(const struct device *dev, uint16_t res_cpi) {
+    struct paw32xx_data *data = dev->data;
+    const struct paw32xx_config *cfg = dev->config;
     uint8_t val;
-    int ret;
+    int ret = 0;
 
     if (!IN_RANGE(res_cpi, RES_MIN, RES_MAX)) {
         LOG_ERR("res_cpi out of range: %d", res_cpi);
@@ -270,53 +283,97 @@ int paw32xx_set_resolution(const struct device *dev, uint16_t res_cpi) {
 
     val = res_cpi / RES_STEP;
 
+    k_mutex_lock(&data->lock, K_FOREVER);
+
+    /* Ensure device is awake before writing */
+    ret = paw32xx_force_awake(dev, true);
+    if (ret < 0) {
+        LOG_ERR("force_awake failed: %d", ret);
+        goto out;
+    }
+
+    /* Disable write protect */
     ret = paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_DISABLE);
     if (ret < 0) {
-        return ret;
+        LOG_ERR("write_protect disable failed: %d", ret);
+        goto out;
     }
+    k_msleep(1);
 
+    /* Write CPI X */
     ret = paw32xx_write_reg(dev, PAW32XX_CPI_X, val);
     if (ret < 0) {
-        return ret;
+        LOG_ERR("write CPI X failed: %d", ret);
+        goto restore_wp;
     }
 
+    /* Write CPI Y */
     ret = paw32xx_write_reg(dev, PAW32XX_CPI_Y, val);
     if (ret < 0) {
-        return ret;
+        LOG_ERR("write CPI Y failed: %d", ret);
+        goto restore_wp;
     }
 
-    ret = paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_ENABLE);
-    if (ret < 0) {
-        return ret;
+    k_msleep(1);
+
+restore_wp:
+    if (paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_ENABLE) < 0) {
+        LOG_ERR("write_protect enable failed");
     }
 
-    return 0;
+    if (ret == 0) {
+        data->current_cpi = res_cpi;
+        LOG_INF("PAW32xx CPI set to %d (reg=%u)", res_cpi, val);
+    }
+
+out:
+    k_mutex_unlock(&data->lock);
+    return ret;
+}
+
+uint16_t paw32xx_get_resolution(const struct device *dev) {
+    struct paw32xx_data *data = dev->data;
+    uint16_t cpi;
+    k_mutex_lock(&data->lock, K_FOREVER);
+    cpi = data->current_cpi;
+    k_mutex_unlock(&data->lock);
+    return cpi;
 }
 
 int paw32xx_force_awake(const struct device *dev, bool enable) {
     uint8_t val = enable ? 0 : OPERATION_MODE_SLP_MASK;
     int ret;
 
+    struct paw32xx_data *data = dev->data;
+    k_mutex_lock(&data->lock, K_FOREVER);
+
     ret = paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_DISABLE);
     if (ret < 0) {
+        k_mutex_unlock(&data->lock);
         return ret;
     }
 
     ret = paw32xx_update_reg(dev, PAW32XX_OPERATION_MODE, OPERATION_MODE_SLP_MASK, val);
     if (ret < 0) {
+        /* Try to restore WP before returning */
+        paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_ENABLE);
+        k_mutex_unlock(&data->lock);
         return ret;
     }
 
     ret = paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_ENABLE);
     if (ret < 0) {
+        k_mutex_unlock(&data->lock);
         return ret;
     }
 
+    k_mutex_unlock(&data->lock);
     return 0;
 }
 
 static int paw32xx_configure(const struct device *dev) {
     const struct paw32xx_config *cfg = dev->config;
+    struct paw32xx_data *data = dev->data;
     uint8_t val;
     int ret;
     int retry_count = 10;
@@ -354,7 +411,12 @@ static int paw32xx_configure(const struct device *dev) {
     k_sleep(K_MSEC(RESET_DELAY_MS));
 
     if (cfg->res_cpi > 0) {
-        paw32xx_set_resolution(dev, cfg->res_cpi);
+        /* Use the public API so data->current_cpi is updated and mutex used */
+        ret = paw32xx_set_resolution(dev, cfg->res_cpi);
+        if (ret < 0) {
+            LOG_ERR("Initial CPI set failed: %d", ret);
+            /* continue anyway */
+        }
     }
 
     paw32xx_force_awake(dev, cfg->force_awake);
@@ -383,6 +445,10 @@ static int paw32xx_init(const struct device *dev) {
     k_work_init(&data->motion_work, paw32xx_motion_work_handler);
     // Initialize the timer for delayed motion checks
     k_timer_init(&data->motion_timer, paw32xx_motion_timer_handler, NULL);
+
+    /* Initialize mutex and current CPI */
+    k_mutex_init(&data->lock);
+    data->current_cpi = (cfg->res_cpi > 0) ? cfg->res_cpi : 0;
 
 #if DT_INST_NODE_HAS_PROP(0, power_gpios)
     // Initialize power GPIO if defined
@@ -519,6 +585,14 @@ static int paw32xx_pm_action(const struct device *dev, enum pm_device_action act
         if (ret < 0) {
             LOG_ERR("Failed to enable IRQ interrupt: %d", ret);
             return ret;
+        }
+
+        /* Re-apply CPI after resume to ensure sensor uses expected setting */
+        {
+            struct paw32xx_data *data = dev->data;
+            if (data->current_cpi > 0) {
+                paw32xx_set_resolution(dev, data->current_cpi);
+            }
         }
         break;
 
